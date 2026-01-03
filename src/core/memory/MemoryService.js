@@ -234,7 +234,7 @@ export class MemoryService {
 
 
     /**
-     * 调用OpenAI兼容API
+     * 调用OpenAI兼容API（通过SillyTavern后端代理，避免CORS问题）
      * @param {string} prompt - 提示词
      * @param {Object} config - API配置
      * @param {string} summaryFormat - 自定义总结格式
@@ -242,26 +242,26 @@ export class MemoryService {
      * @returns {Promise<string>} AI响应
      */
     async callOpenAICompatibleAPI(prompt, config, summaryFormat = '', maxTokens = 8192) {
-        const { url, apiKey, model, proxyMode } = config;
+        const { url, apiKey, model } = config;
 
         if (!url || !apiKey) {
             throw new Error('请先配置API端点和密钥');
         }
 
-        // 确保URL以/v1/chat/completions结尾
-        let apiUrl = url.trim();
-        if (!apiUrl.endsWith('/chat/completions')) {
-            if (!apiUrl.endsWith('/v1')) {
-                apiUrl = apiUrl.replace(/\/$/, '') + '/v1';
-            }
-            apiUrl = apiUrl + '/chat/completions';
-        }
+        // 标准化API端点URL（移除末尾的/chat/completions等路径，只保留基础URL）
+        let baseUrl = url.trim();
+        // 移除常见的API路径后缀
+        baseUrl = baseUrl.replace(/\/chat\/completions\/?$/, '');
+        baseUrl = baseUrl.replace(/\/v1\/?$/, '');
+        baseUrl = baseUrl.replace(/\/$/, '');
+        // 确保以/v1结尾
+        baseUrl = baseUrl + '/v1';
 
         try {
             // 创建超时控制器
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 150000); // 150秒超时
-            
+
             // 构建消息格式 - 使用preset.js中定义的结构
             const messages = [];
 
@@ -303,22 +303,13 @@ export class MemoryService {
                 content: 'doudou:我已经深刻学习上述纲领，并已经完成思考，接下来会直接输出总结内容：'
             });
 
-            // 根据是否启用反代模式决定请求头
-            const headers = {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            };
-            
-            // 如果是反代模式，不添加任何额外的头部（如 CSRF token）
-            // 否则，可能会包含 SillyTavern 的请求头
-            if (!proxyMode && typeof getRequestHeaders === 'function') {
-                // 获取标准请求头但移除 CSRF token
-                const standardHeaders = getRequestHeaders();
-                delete standardHeaders['X-CSRF-Token'];
-                Object.assign(headers, standardHeaders);
-            }
-            
-            const response = await fetch(apiUrl, {
+            // 使用SillyTavern后端代理，避免CORS问题
+            // 获取请求头（包含CSRF token）
+            const headers = this.getRequestHeaders ? this.getRequestHeaders() : {};
+            headers['Content-Type'] = 'application/json';
+
+            // 通过酒馆后端代理发送请求
+            const response = await fetch('/api/backends/chat-completions/generate', {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({
@@ -326,11 +317,23 @@ export class MemoryService {
                     model: model || 'gpt-3.5-turbo',
                     temperature: 1,
                     max_tokens: maxTokens,
-                    stream: false
+                    stream: false,
+                    // 使用custom源，通过reverse_proxy转发请求
+                    chat_completion_source: 'custom',
+                    custom_url: baseUrl,
+                    reverse_proxy: baseUrl,
+                    proxy_password: apiKey,
+                    custom_include_headers: '',
+                    // 禁用不需要的功能
+                    include_reasoning: false,
+                    reasoning_effort: 'medium',
+                    enable_web_search: false,
+                    request_images: false,
+                    custom_prompt_post_processing: 'strict'
                 }),
                 signal: controller.signal
             });
-            
+
             clearTimeout(timeoutId);
 
             if (!response.ok) {
