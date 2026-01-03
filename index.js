@@ -3983,12 +3983,6 @@ jQuery(async () => {
 
     // Different sources have different model settings
     switch (source) {
-      case 'openai':
-      case 'mistral':
-      case 'togetherai':
-        return settings?.openai_model || '';
-      case 'cohere':
-        return settings?.cohere_model || '';
       case 'ollama':
         return settings?.ollama_model || '';
       case 'llamacpp':

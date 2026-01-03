@@ -155,7 +155,7 @@ export class VectorizationAdapter {
      * @returns {Array<string>} 支持的源
      */
     getSupportedSources() {
-        return ['transformers', 'ollama', 'vllm', 'webllm', 'openai', 'cohere'];
+        return ['transformers', 'ollama', 'vllm', 'webllm', 'koboldcpp'];
     }
 
     /**
@@ -185,15 +185,12 @@ export class VectorizationAdapter {
                 case 'webllm':
                     // 检查 WebLLM 是否已加载
                     return !!(window.webllm && window.webllm.embedder);
-                
-                case 'openai':
-                    // 检查 OpenAI API 密钥
-                    return !!this.settings.openai_api_key;
-                
-                case 'cohere':
-                    // 检查 Cohere API 密钥
-                    return !!this.settings.cohere_api_key;
-                
+
+                case 'koboldcpp':
+                    // 检查 KoboldCpp 服务是否配置
+                    const koboldUrl = this.textgenerationwebui_settings?.server_urls?.[this.textgen_types?.KOBOLDCPP];
+                    return !!koboldUrl;
+
                 default:
                     return false;
             }
@@ -218,10 +215,8 @@ export class VectorizationAdapter {
                 return 30;  // vLLM 可以处理中等批次
             case 'webllm':
                 return 1;   // WebLLM 通常需要逐个处理
-            case 'openai':
-                return 100; // OpenAI API 有较高的批次限制
-            case 'cohere':
-                return 96;  // Cohere 的官方批次限制
+            case 'koboldcpp':
+                return 10;  // KoboldCpp 批次大小
             default:
                 return 10;  // 保守的默认值
         }

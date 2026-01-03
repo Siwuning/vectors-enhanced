@@ -290,16 +290,12 @@ export class VectorStoragePathUI {
 
         // Different sources have different model settings
         switch (source) {
-            case 'openai':
-            case 'mistral':
-            case 'togetherai':
-                return vectorSettings?.openai_model || '';
-            case 'cohere':
-                return vectorSettings?.cohere_model || '';
             case 'ollama':
                 return vectorSettings?.ollama_model || '';
             case 'vllm':
                 return vectorSettings?.vllm_model || '';
+            case 'koboldcpp':
+                return 'koboldcpp';
             default:
                 return '';
         }

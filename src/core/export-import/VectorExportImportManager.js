@@ -172,16 +172,16 @@ export class VectorExportImportManager {
     
     const source = settings.source;
     switch (source) {
-      case 'openai':
-        return settings.openai_model || 'text-embedding-ada-002';
-      case 'cohere':
-        return settings.cohere_model || 'embed-english-v2.0';
       case 'ollama':
         return settings.ollama_model || 'nomic-embed-text';
       case 'transformers':
         return settings.transformers_model || 'Xenova/all-MiniLM-L6-v2';
       case 'webllm':
         return settings.webllm_model || 'all-MiniLM-L6-v2-q4f16_1';
+      case 'vllm':
+        return settings.vllm_model || '';
+      case 'koboldcpp':
+        return 'koboldcpp';
       case 'local':
         return settings.local_model || 'custom';
       default:
