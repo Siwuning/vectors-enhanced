@@ -363,6 +363,20 @@
             </label>
           </div>
 
+          <!-- Current World Book Display and Rename -->
+          <div class="memory-worldbook-management" style="margin-top: 10px; padding: 8px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="font-size: 0.9em; color: var(--SmartThemeQuoteColor);">
+                <i class="fa-solid fa-book"></i> 当前世界书:
+              </span>
+              <span id="memory_current_worldbook_name" style="font-weight: bold; flex: 1; min-width: 100px;">(未绑定)</span>
+              <button id="memory_worldbook_rename_btn" type="button" class="menu_button menu_button_icon" title="重命名当前世界书" disabled>
+                <i class="fa-solid fa-pen"></i>
+                <span>重命名</span>
+              </button>
+            </div>
+          </div>
+
           <!-- Auto-Summarize Settings -->
           <div class="memory-auto-summarize-section" style="margin-top: 15px;">
             <label class="checkbox_label" for="memory_auto_summarize_enabled" title="启用自动总结功能">

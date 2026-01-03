@@ -179,6 +179,12 @@ export class MemoryUI {
 
         // Vectorize summary button handler
         $('#memory_vectorize_summary').off('click').on('click', () => this.vectorizeChatLore());
+
+        // 重命名世界书按钮
+        $('#memory_worldbook_rename_btn').off('click').on('click', () => this.renameWorldBook());
+
+        // 初始化世界书名称显示
+        this.updateCurrentWorldBookDisplay();
         
         // Auto-summarize settings
         $('#memory_auto_summarize_enabled').off('change').on('change', (e) => {
@@ -631,9 +637,12 @@ export class MemoryUI {
                 
                 // 调用 SillyTavern 的更新函数来刷新主界面列表
                 await updateSillyTavernWorldInfoList();
-                
+
                 // 调用插件的更新函数来刷新插件内部列表
                 await updatePluginWorldInfoList();
+
+                // 更新当前世界书显示
+                this.updateCurrentWorldBookDisplay();
             }
             
         } catch (error) {
@@ -645,6 +654,119 @@ export class MemoryUI {
         }
     }
 
+    /**
+     * 重命名当前聊天绑定的世界书
+     */
+    async renameWorldBook() {
+        try {
+            // 获取当前绑定的世界书名称
+            const currentWorldBook = this.getCurrentWorldBookName();
+
+            if (!currentWorldBook) {
+                this.toastr?.warning('当前聊天没有绑定的世界书');
+                return;
+            }
+
+            // 弹出输入框让用户输入新名称
+            const { callGenericPopup, POPUP_TYPE } = await import('../../../../../../popup.js');
+
+            const newName = await callGenericPopup(
+                `<div style="margin-bottom: 10px;">当前世界书名称: <strong>${currentWorldBook}</strong></div>
+                 <div>请输入新的世界书名称:</div>`,
+                POPUP_TYPE.INPUT,
+                currentWorldBook,
+                {
+                    okButton: '重命名',
+                    cancelButton: '取消',
+                    rows: 1
+                }
+            );
+
+            // 用户取消或未输入
+            if (!newName || newName.trim() === '') {
+                return;
+            }
+
+            const trimmedNewName = newName.trim();
+
+            // 检查名称是否相同
+            if (trimmedNewName === currentWorldBook) {
+                this.toastr?.info('新名称与当前名称相同');
+                return;
+            }
+
+            // 调用服务层方法进行重命名
+            const result = await this.memoryService.renameWorldBook(currentWorldBook, trimmedNewName);
+
+            if (result.success) {
+                this.toastr?.success(`世界书已重命名为: ${trimmedNewName}`);
+
+                // 刷新世界书列表
+                await updateSillyTavernWorldInfoList();
+                await updatePluginWorldInfoList();
+
+                // 更新显示
+                this.updateCurrentWorldBookDisplay();
+            }
+
+        } catch (error) {
+            console.error('[MemoryUI] 重命名世界书失败:', error);
+            this.toastr?.error('重命名世界书失败: ' + error.message);
+        }
+    }
+
+    /**
+     * 获取当前聊天绑定的世界书名称
+     * @returns {string|null} 世界书名称或 null
+     */
+    getCurrentWorldBookName() {
+        // 优先从 getContext 获取，因为它返回的是实时数据
+        const context = this.getContext ? this.getContext() : window.getContext?.();
+
+        let worldBookName = null;
+
+        // 1. 从 context.chat_metadata 获取（最可靠）
+        if (context?.chat_metadata) {
+            worldBookName = context.chat_metadata[METADATA_KEY];
+        }
+
+        // 2. 从导入的 chat_metadata 获取
+        if (!worldBookName && chat_metadata) {
+            worldBookName = chat_metadata[METADATA_KEY];
+        }
+
+        // 3. 从 window.chat_metadata 获取
+        if (!worldBookName && window.chat_metadata) {
+            worldBookName = window.chat_metadata[METADATA_KEY];
+        }
+
+        console.log('[MemoryUI] getCurrentWorldBookName:', {
+            fromContext: context?.chat_metadata?.[METADATA_KEY],
+            fromImport: chat_metadata?.[METADATA_KEY],
+            fromWindow: window.chat_metadata?.[METADATA_KEY],
+            result: worldBookName
+        });
+
+        return worldBookName || null;
+    }
+
+    /**
+     * 更新当前世界书名称显示
+     */
+    updateCurrentWorldBookDisplay() {
+        const worldBookName = this.getCurrentWorldBookName();
+        const displayElement = $('#memory_current_worldbook_name');
+
+        if (displayElement.length) {
+            if (worldBookName) {
+                displayElement.text(worldBookName);
+                $('#memory_worldbook_rename_btn').prop('disabled', false);
+            } else {
+                displayElement.text('(未绑定)');
+                $('#memory_worldbook_rename_btn').prop('disabled', true);
+            }
+        }
+    }
 
     /**
      * Initialize API source display without saving
@@ -1103,6 +1225,7 @@ export class MemoryUI {
                     this.migrateLastSummarizedFloor();  // 执行迁移
                     this.updateChatFloorCount();
                     this.updateAutoSummarizeStatus();
+                    this.updateCurrentWorldBookDisplay();  // 更新世界书显示
                 }, 100);
             });
             

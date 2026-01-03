@@ -364,51 +364,64 @@ export class MemoryService {
      */
     async createWorldBook(summaryContent = null, floorRange = null) {
         try {
-            // 获取当前角色名称和时间
-            let characterName = 'Unknown';
-            let formattedDate = '';
+            // 获取当前上下文
+            const context = this.getContext ? this.getContext() : window.getContext?.();
 
-            try {
-                // 获取当前上下文
-                const context = this.getContext ? this.getContext() : window.getContext?.();
-
-                if (context) {
-                    // 优先使用 name2 (显示名称)，其次使用 name
-                    characterName = context.name2 || context.name || 'Unknown';
-
-                    // 从 chatId 中提取时间
-                    if (context.chatId) {
-                        // chatId 格式: "角色名 - 2025-07-16@02h30m11s" 或 "2025-7-9 @20h 26m 15s 653ms"
-                        const parts = context.chatId.split(' - ');
-
-                        // 如果分割成功且有角色名部分
-                        if (parts.length > 1 && characterName === 'Unknown') {
-                            characterName = parts[0];
-                        }
-
-                        // 获取时间戳部分
-                        const timestampString = parts.length > 1 ? parts[1] : parts[0];
-
-                        try {
-                            // 解析时间戳
-                            const dateTimeMatch = timestampString.match(/(\d{4})-(\d{1,2})-(\d{1,2})\s*@?\s*(\d{1,2})h\s*(\d{1,2})m/);
-
-                            if (dateTimeMatch) {
-                                const [, yearFull, month, day, hours, minutes] = dateTimeMatch;
-                                const year = yearFull.slice(2); // 取后两位
-                                formattedDate = `${year}${month.padStart(2, '0')}${day.padStart(2, '0')} ${hours.padStart(2, '0')}${minutes.padStart(2, '0')}`;
-                            }
-                        } catch (e) {
-                            // 解析失败时静默处理
-                        }
-                    }
-                }
-            } catch (error) {
-                // 获取角色名称失败时静默处理
+            // 优先检查当前聊天是否已绑定世界书
+            let worldBookName = null;
+            if (context?.chat_metadata?.['world_info']) {
+                worldBookName = context.chat_metadata['world_info'];
+                console.log('[MemoryService] 使用已绑定的世界书:', worldBookName);
+            } else if (chat_metadata?.['world_info']) {
+                worldBookName = chat_metadata['world_info'];
+                console.log('[MemoryService] 使用已绑定的世界书 (from import):', worldBookName);
             }
 
-            // 组合世界书名称（如果没有时间，只用角色名）
-            const worldBookName = formattedDate ? `${characterName} ${formattedDate}` : characterName;
+            // 如果没有绑定世界书，才生成新名称
+            if (!worldBookName) {
+                let characterName = 'Unknown';
+                let formattedDate = '';
+
+                try {
+                    if (context) {
+                        // 优先使用 name2 (显示名称)，其次使用 name
+                        characterName = context.name2 || context.name || 'Unknown';
+
+                        // 从 chatId 中提取时间
+                        if (context.chatId) {
+                            // chatId 格式: "角色名 - 2025-07-16@02h30m11s" 或 "2025-7-9 @20h 26m 15s 653ms"
+                            const parts = context.chatId.split(' - ');
+
+                            // 如果分割成功且有角色名部分
+                            if (parts.length > 1 && characterName === 'Unknown') {
+                                characterName = parts[0];
+                            }
+
+                            // 获取时间戳部分
+                            const timestampString = parts.length > 1 ? parts[1] : parts[0];
+
+                            try {
+                                // 解析时间戳
+                                const dateTimeMatch = timestampString.match(/(\d{4})-(\d{1,2})-(\d{1,2})\s*@?\s*(\d{1,2})h\s*(\d{1,2})m/);
+
+                                if (dateTimeMatch) {
+                                    const [, yearFull, month, day, hours, minutes] = dateTimeMatch;
+                                    const year = yearFull.slice(2); // 取后两位
+                                    formattedDate = `${year}${month.padStart(2, '0')}${day.padStart(2, '0')} ${hours.padStart(2, '0')}${minutes.padStart(2, '0')}`;
+                                }
+                            } catch (e) {
+                                // 解析失败时静默处理
+                            }
+                        }
+                    }
+                } catch (error) {
+                    // 获取角色名称失败时静默处理
+                }
+
+                // 组合世界书名称（如果没有时间，只用角色名）
+                worldBookName = formattedDate ? `${characterName} ${formattedDate}` : characterName;
+                console.log('[MemoryService] 生成新的世界书名称:', worldBookName);
+            }
 
             // 先尝试获取现有的世界书
             let worldBookData = null;
@@ -543,6 +556,129 @@ export class MemoryService {
 
         } catch (error) {
             console.error('[MemoryService] 创建世界书失败:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 重命名世界书
+     * @param {string} oldName - 旧世界书名称
+     * @param {string} newName - 新世界书名称
+     * @returns {Promise<Object>} 重命名结果
+     */
+    async renameWorldBook(oldName, newName) {
+        try {
+            if (!oldName || !newName) {
+                throw new Error('旧名称和新名称都不能为空');
+            }
+
+            if (oldName === newName) {
+                throw new Error('新名称与旧名称相同');
+            }
+
+            console.log(`[MemoryService] 开始重命名世界书: ${oldName} -> ${newName}`);
+
+            // 1. 获取旧世界书内容
+            const getResponse = await fetch('/api/worldinfo/get', {
+                method: 'POST',
+                headers: {
+                    ...(this.getRequestHeaders ? this.getRequestHeaders() : {}),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: oldName })
+            });
+
+            if (!getResponse.ok) {
+                throw new Error(`无法获取世界书 "${oldName}"`);
+            }
+
+            const worldBookData = await getResponse.json();
+
+            if (!worldBookData || !worldBookData.entries) {
+                throw new Error(`世界书 "${oldName}" 数据无效`);
+            }
+
+            // 2. 检查新名称是否已存在
+            const checkResponse = await fetch('/api/worldinfo/get', {
+                method: 'POST',
+                headers: {
+                    ...(this.getRequestHeaders ? this.getRequestHeaders() : {}),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: newName })
+            });
+
+            if (checkResponse.ok) {
+                const existingData = await checkResponse.json();
+                if (existingData && existingData.entries && Object.keys(existingData.entries).length > 0) {
+                    throw new Error(`世界书 "${newName}" 已存在`);
+                }
+            }
+
+            // 3. 用新名称创建世界书
+            const createResponse = await fetch('/api/worldinfo/edit', {
+                method: 'POST',
+                headers: {
+                    ...(this.getRequestHeaders ? this.getRequestHeaders() : {}),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: newName,
+                    data: worldBookData
+                })
+            });
+
+            if (!createResponse.ok) {
+                throw new Error(`无法创建新世界书 "${newName}"`);
+            }
+
+            // 4. 删除旧世界书
+            const deleteResponse = await fetch('/api/worldinfo/delete', {
+                method: 'POST',
+                headers: {
+                    ...(this.getRequestHeaders ? this.getRequestHeaders() : {}),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: oldName })
+            });
+
+            if (!deleteResponse.ok) {
+                console.warn(`[MemoryService] 删除旧世界书 "${oldName}" 失败，但新世界书已创建`);
+            }
+
+            // 5. 更新聊天绑定
+            if (chat_metadata && chat_metadata['world_info'] === oldName) {
+                chat_metadata['world_info'] = newName;
+                if (saveMetadata) {
+                    await saveMetadata();
+                }
+                console.log(`[MemoryService] 已更新聊天绑定: ${newName}`);
+            }
+
+            // 6. 触发事件通知
+            const eventSource = window.eventSource || this.dependencies?.eventSource;
+            const event_types = window.event_types || this.dependencies?.event_types;
+            if (eventSource && event_types) {
+                await eventSource.emit(event_types.WORLDINFO_UPDATED, newName, worldBookData);
+            }
+
+            this.eventBus?.emit('memory:worldbook-renamed', {
+                oldName,
+                newName,
+                data: worldBookData
+            });
+
+            console.log(`[MemoryService] 世界书重命名成功: ${oldName} -> ${newName}`);
+
+            return {
+                success: true,
+                oldName,
+                newName,
+                data: worldBookData
+            };
+
+        } catch (error) {
+            console.error('[MemoryService] 重命名世界书失败:', error);
             throw error;
         }
     }
