@@ -123,6 +123,11 @@ const settings = {
   force_chunk_delimiter: '',
   // lightweight_storage: 已移除，所有文本都存储在向量数据库中
 
+  // TPM rate limit settings (TPM 限制控制)
+  batch_delay_enabled: false, // 是否启用批次延迟
+  batch_delay_chunks: 50, // 触发延迟的块数
+  batch_delay_seconds: 60, // 延迟秒数
+
   // Query settings
   enabled: true, // 是否启用向量查询
   query_messages: 3, // 查询使用的最近消息数
@@ -327,6 +332,36 @@ function deepMerge(target, source) {
  */
 function generateTaskId() {
   return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * 延迟倒计时函数，用于 TPM 限制控制
+ * @param {number} seconds 延迟秒数
+ * @param {number} processed 已处理的块数
+ * @param {number} total 总块数
+ * @param {AbortSignal} signal 中断信号
+ * @param {object} progressManager 进度管理器
+ */
+async function delayWithCountdown(seconds, processed, total, signal, progressManager) {
+  console.log(`TPM 延迟控制: 已处理 ${processed}/${total} 块，延迟 ${seconds} 秒`);
+
+  for (let remaining = seconds; remaining > 0; remaining--) {
+    if (signal && signal.aborted) {
+      throw new Error('向量化被用户中断');
+    }
+
+    if (progressManager) {
+      progressManager.update(
+        processed,
+        total,
+        `TPM 限制延迟中... ${remaining}秒`
+      );
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  console.log('TPM 延迟结束，继续处理');
 }
 
 /**
@@ -1487,6 +1522,8 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
 
       // Store vectors using existing storage adapter
       const batchSize = 50;
+      let chunksProcessedSinceDelay = 0; // 用于 TPM 延迟控制的计数器
+
       for (let i = 0; i < allProcessedChunks.length; i += batchSize) {
         if (vectorizationAbortController.signal.aborted) {
           throw new Error('向量化被用户中断');
@@ -1497,6 +1534,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         vectorsInserted = true;
         // 更新已处理的块数
         processedChunksCount = Math.min(i + batch.length, allProcessedChunks.length);
+        chunksProcessedSinceDelay += batch.length;
 
         // 追踪最后成功保存的 chunk
         if (batch.length > 0) {
@@ -1505,6 +1543,21 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
 
         if (globalProgressManager) {
           globalProgressManager.update(Math.min(i + batchSize, allProcessedChunks.length), allProcessedChunks.length, '向量存储中...');
+        }
+
+        // TPM 延迟控制：当处理的块数达到阈值时，进行延迟
+        if (settings.batch_delay_enabled &&
+            chunksProcessedSinceDelay >= settings.batch_delay_chunks &&
+            i + batchSize < allProcessedChunks.length) { // 还有更多批次要处理
+
+          await delayWithCountdown(
+            settings.batch_delay_seconds,
+            processedChunksCount,
+            allProcessedChunks.length,
+            vectorizationAbortController.signal,
+            globalProgressManager
+          );
+          chunksProcessedSinceDelay = 0; // 重置计数器
         }
       }
 

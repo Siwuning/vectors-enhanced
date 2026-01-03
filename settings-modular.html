@@ -584,6 +584,34 @@
           <input id="vectors_enhanced_force_chunk_delimiter" class="text_pole" type="text" placeholder="（可选）" />
         </div>
 
+        <!-- TPM Rate Limit Control -->
+        <div class="flex-container flexFlowColumn m-t-1">
+          <label class="checkbox_label" for="vectors_enhanced_batch_delay_enabled" title="启用批次延迟以避免触发 TPM（每分钟 Token 数）限制">
+            <input id="vectors_enhanced_batch_delay_enabled" type="checkbox" />
+            <span>启用 TPM 限制控制</span>
+          </label>
+
+          <div id="vectors_enhanced_batch_delay_settings" style="margin-left: 1.5rem; display: none;">
+            <div class="flex-container m-t-0-5">
+              <div class="flex1" title="处理多少块后触发延迟">
+                <label for="vectors_enhanced_batch_delay_chunks">
+                  <small>延迟触发块数</small>
+                </label>
+                <input id="vectors_enhanced_batch_delay_chunks" type="number" class="text_pole" min="10" max="500" value="50" />
+              </div>
+              <div class="flex1" title="每次延迟的秒数">
+                <label for="vectors_enhanced_batch_delay_seconds">
+                  <small>延迟秒数</small>
+                </label>
+                <input id="vectors_enhanced_batch_delay_seconds" type="number" class="text_pole" min="1" max="300" value="60" />
+              </div>
+            </div>
+            <div id="vectors_enhanced_batch_delay_info" class="m-t-0-5" style="font-size: 0.85em; color: var(--SmartThemeQuoteColor);">
+              <!-- 动态显示估算信息 -->
+            </div>
+          </div>
+        </div>
+
         <!-- Query Settings -->
         <div class="flex-container m-t-0-5">
           <div class="flex1">

@@ -156,6 +156,71 @@ export class SettingsManager {
         this.settings.score_threshold = Number($('#vectors_enhanced_score_threshold').val());
         this.updateAndSave();
       });
+
+    // TPM 限制控制
+    this.initializeBatchDelaySettings();
+  }
+
+  /**
+   * 初始化 TPM 限制控制设置
+   */
+  initializeBatchDelaySettings() {
+    const updateDelayInfo = () => {
+      const chunkSize = this.settings.chunk_size || 768;
+      const delayChunks = this.settings.batch_delay_chunks || 50;
+      const delaySeconds = this.settings.batch_delay_seconds || 60;
+      const totalChars = chunkSize * delayChunks;
+
+      $('#vectors_enhanced_batch_delay_info').html(
+        `当前配置: ${chunkSize}字符 × ${delayChunks}块 ≈ ${totalChars.toLocaleString()} 字符后延迟 ${delaySeconds} 秒`
+      );
+    };
+
+    // 启用批次延迟
+    $('#vectors_enhanced_batch_delay_enabled')
+      .prop('checked', this.settings.batch_delay_enabled || false)
+      .on('change', () => {
+        this.settings.batch_delay_enabled = $('#vectors_enhanced_batch_delay_enabled').prop('checked');
+        this.updateAndSave();
+        // 控制详细设置的显示/隐藏
+        $('#vectors_enhanced_batch_delay_settings').toggle(this.settings.batch_delay_enabled);
+        if (this.settings.batch_delay_enabled) {
+          updateDelayInfo();
+        }
+      });
+
+    // 延迟触发块数
+    $('#vectors_enhanced_batch_delay_chunks')
+      .val(this.settings.batch_delay_chunks || 50)
+      .on('input', () => {
+        this.settings.batch_delay_chunks = Number($('#vectors_enhanced_batch_delay_chunks').val()) || 50;
+        this.updateAndSave();
+        updateDelayInfo();
+      });
+
+    // 延迟秒数
+    $('#vectors_enhanced_batch_delay_seconds')
+      .val(this.settings.batch_delay_seconds || 60)
+      .on('input', () => {
+        this.settings.batch_delay_seconds = Number($('#vectors_enhanced_batch_delay_seconds').val()) || 60;
+        this.updateAndSave();
+        updateDelayInfo();
+      });
+
+    // 初始化详细设置的显示状态
+    $('#vectors_enhanced_batch_delay_settings').toggle(this.settings.batch_delay_enabled || false);
+
+    // 初始化信息显示
+    if (this.settings.batch_delay_enabled) {
+      updateDelayInfo();
+    }
+
+    // 当块大小变化时也更新信息
+    $('#vectors_enhanced_chunk_size').on('input', () => {
+      if (this.settings.batch_delay_enabled) {
+        updateDelayInfo();
+      }
+    });
   }
 
   /**
