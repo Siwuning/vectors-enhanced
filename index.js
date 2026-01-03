@@ -15,6 +15,7 @@ import {
   saveChatConditional,
   chat_metadata,
   saveChatDebounced,
+  refreshSwipeButtons,
 } from '../../../../script.js';
 import { getDataBankAttachments, getDataBankAttachmentsForSource, getFileAttachment } from '../../../chats.js';
 import { debounce_timeout } from '../../../constants.js';
@@ -3440,6 +3441,7 @@ jQuery(async () => {
     saveChatConditional,  // 添加saveChatConditional
     chat_metadata,  // 添加chat_metadata
     saveChatDebounced,  // 添加saveChatDebounced
+    refreshSwipeButtons,  // 添加refreshSwipeButtons
     toastr,
     oai_settings,
     getRequestHeaders,
@@ -4262,11 +4264,17 @@ async function toggleMessageVisibility(messageIndex, hide) {
     // 修改消息的 is_system 属性
     context.chat[messageIndex].is_system = hide;
 
-    // 触发保存
-    await context.saveChat();
+    // 直接更新 DOM 属性（轻量级更新，避免 reloadCurrentChat）
+    const messageBlock = $(`#chat .mes[mesid="${messageIndex}"]`);
+    if (messageBlock.length) {
+      messageBlock.attr('is_system', String(hide));
+    }
 
-    // 刷新界面
-    await context.reloadCurrentChat();
+    // 刷新滑动按钮（如果最后一条消息被隐藏可能需要更新）
+    refreshSwipeButtons();
+
+    // 触发保存
+    await saveChatConditional();
 
     return true;
   } catch (error) {
@@ -4298,16 +4306,22 @@ async function toggleMessageRangeVisibility(startIndex, endIndex, hide) {
   }
 
   try {
-    // 批量修改消息的 is_system 属性
+    // 批量修改消息的 is_system 属性并更新 DOM
     for (let i = start; i < end; i++) {
       context.chat[i].is_system = hide;
+
+      // 直接更新 DOM 属性（轻量级更新，避免 reloadCurrentChat）
+      const messageBlock = $(`#chat .mes[mesid="${i}"]`);
+      if (messageBlock.length) {
+        messageBlock.attr('is_system', String(hide));
+      }
     }
 
-    // 触发保存
-    await context.saveChat();
+    // 刷新滑动按钮（如果最后一条消息被隐藏可能需要更新）
+    refreshSwipeButtons();
 
-    // 刷新界面
-    await context.reloadCurrentChat();
+    // 触发保存
+    await saveChatConditional();
 
     const action = hide ? '隐藏' : '显示';
     toastr.success(`已${action}消息 #${start} 到 #${endIndex}`);

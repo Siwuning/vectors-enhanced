@@ -78,6 +78,7 @@ export class MemoryUI {
         this.eventSource = dependencies.eventSource; // 添加eventSource
         this.event_types = dependencies.event_types; // 添加event_types
         this.saveChatConditional = dependencies.saveChatConditional; // 添加saveChatConditional
+        this.refreshSwipeButtons = dependencies.refreshSwipeButtons; // 添加refreshSwipeButtons
         this.initialized = false;
 
         // UI state
@@ -1553,76 +1554,82 @@ export class MemoryUI {
                 console.log('[MemoryUI] 隐藏楼层功能未启用');
                 return;
             }
-            
+
             // 使用注入的依赖
             const context = this.getContext();
-            
+
             if (!context || !context.chat) {
                 console.error('[MemoryUI] 无法获取聊天上下文');
                 return;
             }
-            
+
             // 找出需要隐藏的消息范围
             // 需要包含startIndex和endIndex之间的所有用户消息
             let hideCount = 0;
             const messagesToHide = [];
-            
+
             // 遍历聊天记录，找出需要隐藏的消息
             for (let i = 0; i < context.chat.length; i++) {
                 const msg = context.chat[i];
-                
+
                 // 如果是AI消息且在总结范围内
                 if (!msg.is_user && i >= startIndex && i <= endIndex) {
                     messagesToHide.push(i);
                 }
-                
+
                 // 如果是用户消息且在总结范围内（包括边界）
                 // 例如：总结了5-10楼的AI消息，也要隐藏4-10之间的用户消息
                 if (msg.is_user && i >= Math.max(0, startIndex - 1) && i <= endIndex) {
                     messagesToHide.push(i);
                 }
             }
-            
+
             console.log('[MemoryUI] 准备隐藏的消息索引:', messagesToHide);
-            
-            // 批量隐藏消息
+
+            // 批量隐藏消息并直接更新 DOM
             for (const index of messagesToHide) {
                 context.chat[index].is_system = true;
                 hideCount++;
+
+                // 直接更新 DOM 属性（轻量级更新，避免 reloadCurrentChat）
+                const messageBlock = $(`#chat .mes[mesid="${index}"]`);
+                if (messageBlock.length) {
+                    messageBlock.attr('is_system', 'true');
+                }
             }
-            
+
             if (hideCount > 0) {
+                // 刷新滑动按钮（如果最后一条消息被隐藏可能需要更新）
+                if (typeof this.refreshSwipeButtons === 'function') {
+                    this.refreshSwipeButtons();
+                }
+
                 // 保存聊天记录
                 if (this.saveChatConditional) {
                     await this.saveChatConditional();
                 } else {
                     console.error('[MemoryUI] saveChatConditional not available');
+                    return; // 如果无法保存，直接返回避免数据不一致
                 }
-                
-                // 触发UI更新
+
+                // 触发UI更新事件（可选，用于通知其他组件）
                 const eventSource = this.eventSource;
                 const event_types = this.event_types;
                 if (eventSource && event_types) {
                     eventSource.emit(event_types.CHAT_CHANGED);
                 }
-                
-                // 重新加载当前聊天以立即显示隐藏标志
-                if (context.reloadCurrentChat && typeof context.reloadCurrentChat === 'function') {
-                    await context.reloadCurrentChat();
-                }
-                
+
                 // 更新隐藏消息信息显示
-                // 注意：这里可能需要在将来添加MessageUI的依赖注入
                 if (window.MessageUI && typeof window.MessageUI.updateHiddenMessagesInfo === 'function') {
                     window.MessageUI.updateHiddenMessagesInfo();
                 } else {
                     console.log('[MemoryUI] MessageUI.updateHiddenMessagesInfo not available');
                 }
-                
+
                 this.toastr?.info(`已隐藏 ${hideCount} 条消息`);
                 console.log(`[MemoryUI] 成功隐藏 ${hideCount} 条消息`);
             }
-            
+
         } catch (error) {
             console.error('[MemoryUI] 隐藏楼层失败:', error);
             this.toastr?.error('隐藏楼层失败: ' + error.message);

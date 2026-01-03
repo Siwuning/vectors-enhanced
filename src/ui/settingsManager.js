@@ -1053,7 +1053,8 @@ export class SettingsManager {
       event_types: this.dependencies.event_types || window.event_types, // 传入event_types
       saveChatConditional: this.dependencies.saveChatConditional, // 传入saveChatConditional
       chat_metadata: this.dependencies.chat_metadata, // 传入chat_metadata
-      saveChatDebounced: this.dependencies.saveChatDebounced // 传入saveChatDebounced
+      saveChatDebounced: this.dependencies.saveChatDebounced, // 传入saveChatDebounced
+      refreshSwipeButtons: this.dependencies.refreshSwipeButtons // 传入refreshSwipeButtons
     });
     
     await this.memoryUI.init();
