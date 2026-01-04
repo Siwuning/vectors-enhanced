@@ -171,8 +171,25 @@ export class MemoryUI {
         // Prompt buttons removed - using preset format
 
         // Save config on input changes (包括API密钥)
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format, #memory_detail_level, #memory_max_tokens, #memory_auto_create_world_book, #memory_hide_floors_after_summary, #memory_disable_world_info_after_vectorize')
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_openai_custom_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_google_custom_model, #memory_summary_format, #memory_detail_level, #memory_max_tokens, #memory_auto_create_world_book, #memory_hide_floors_after_summary, #memory_disable_world_info_after_vectorize')
             .off('change input').on('change input', () => this.saveApiConfig());
+
+        // 自定义模型复选框控制
+        $('#memory_openai_custom_model_enabled').off('change').on('change', (e) => {
+            const enabled = e.target.checked;
+            $('#memory_openai_custom_model').prop('disabled', !enabled);
+            $('#memory_openai_model').prop('disabled', enabled);
+            $('#memory_openai_refresh_models').prop('disabled', enabled);
+            this.saveApiConfig();
+        });
+
+        $('#memory_google_custom_model_enabled').off('change').on('change', (e) => {
+            const enabled = e.target.checked;
+            $('#memory_google_custom_model').prop('disabled', !enabled);
+            $('#memory_google_openai_model').prop('disabled', enabled);
+            $('#memory_google_refresh_models').prop('disabled', enabled);
+            this.saveApiConfig();
+        });
 
         // Reset button for summary format
         $('#reset_memory_summary_format').off('click').on('click', () => this.resetSummaryFormat());
@@ -245,17 +262,20 @@ export class MemoryUI {
 
         this.eventBus.on('memory:message-complete', async (data) => {
             const response = data.response || '';
-            
+
             // 生成响应哈希以检测重复
             const responseHash = this.generateHash(response + Date.now().toString().slice(-5));
-            
+
             // 检查是否是重复的响应
             if (this.lastResponseHash === responseHash) {
                 console.log('[MemoryUI] 忽略重复的响应');
                 return;
             }
             this.lastResponseHash = responseHash;
-            
+
+            // 使用统一的验证方法检查响应是否有效
+            const isValidResponse = this.isValidSummaryResponse(response);
+
             // 检查响应是否有效
             if (!response || response.trim().length < 2) {
                 console.error('[MemoryUI] AI返回空内容');
@@ -275,28 +295,22 @@ export class MemoryUI {
                 this.hideLoading();
                 return;
             }
-            
-            // 检查是否包含错误信息（短响应中包含错误关键词）
-            const errorKeywords = ['error', 'Error', 'ERROR', '错误', '失败', 'failed', 'Failed'];
-            const lowerResponse = response.toLowerCase();
-            const isError = errorKeywords.some(keyword => 
-                lowerResponse.includes(keyword.toLowerCase()) && response.length < 100
-            );
-            
-            if (isError) {
-                console.warn('[MemoryUI] AI可能返回了错误:', response);
-                this.toastr?.warning('AI响应可能包含错误：' + response.substring(0, 50) + '...');
+
+            // 检查是否包含错误信息
+            if (!isValidResponse) {
+                console.warn('[MemoryUI] AI可能返回了错误或无效内容:', response.substring(0, 100));
+                this.toastr?.warning('AI响应可能无效，已跳过自动创建世界书');
             }
-            
+
             this.displayResponse(response);
             this.hideLoading();
-            
+
             // 只有有效响应且启用了自动生成才创建世界书
-            if (response && response.trim().length >= 2) {
+            if (isValidResponse) {
                 // 检查是否启用了自动创建世界书
-                const autoCreate = $('#memory_auto_create_world_book').prop('checked') || 
+                const autoCreate = $('#memory_auto_create_world_book').prop('checked') ||
                                   this.settings?.memory?.autoCreateWorldBook || false;
-                
+
                 if (autoCreate) {
                     console.log('[MemoryUI] 自动创建世界书已启用，准备创建...');
                     // 延迟一下确保UI已更新
@@ -438,11 +452,18 @@ export class MemoryUI {
                     maxTokens: maxTokens
                 });
                 
-                if (result.success) {
+                // 验证响应是否有效（防止空响应或错误消息触发后续操作）
+                const isValidResponse = this.isValidSummaryResponse(result.response);
+
+                if (result.success && isValidResponse) {
                     this.toastr?.success(`已总结楼层 #${startIndex + 1} 至 #${endIndex + 1} 的内容`);
-                    
+
                     // 检查是否需要隐藏楼层
                     await this.hideFloorsIfEnabled(startIndex, endIndex, false);
+                } else if (result.success && !isValidResponse) {
+                    // API 调用成功但响应内容无效
+                    console.warn('[MemoryUI] 总结响应无效:', result.response?.substring(0, 100));
+                    this.toastr?.warning('总结返回的内容过短或无效，后续操作已跳过');
                 }
             } catch (error) {
                 console.error('[MemoryUI] 总结失败:', error);
@@ -778,6 +799,47 @@ export class MemoryUI {
     }
 
     /**
+     * 验证总结响应是否有效
+     * @param {string} response - API 返回的响应内容
+     * @returns {boolean} 响应是否有效
+     */
+    isValidSummaryResponse(response) {
+        // 空响应无效
+        if (!response || typeof response !== 'string') {
+            return false;
+        }
+
+        const trimmed = response.trim();
+
+        // 太短的响应无效（正常总结至少应该有 50 个字符）
+        if (trimmed.length < 50) {
+            return false;
+        }
+
+        // 检查是否是常见的错误消息（短响应中包含错误关键词）
+        const errorKeywords = [
+            'error', 'Error', 'ERROR',
+            '错误', '失败', 'failed', 'Failed',
+            'unauthorized', 'Unauthorized',
+            'invalid', 'Invalid',
+            'forbidden', 'Forbidden',
+            'not found', 'Not Found'
+        ];
+
+        // 只有在响应较短时才检查错误关键词
+        if (trimmed.length < 200) {
+            const lowerResponse = trimmed.toLowerCase();
+            for (const keyword of errorKeywords) {
+                if (lowerResponse.includes(keyword.toLowerCase())) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Initialize API source display without saving
      * @param {string} source - Selected API source
      */
@@ -827,17 +889,29 @@ export class MemoryUI {
         const source = $('#memory_api_source').val();
 
         switch(source) {
-            case 'openai_compatible':
+            case 'openai_compatible': {
+                // 优先级：勾选自定义时使用手动输入，否则使用下拉选择
+                const useCustom = $('#memory_openai_custom_model_enabled').prop('checked');
+                const model = useCustom
+                    ? ($('#memory_openai_custom_model').val() || '')
+                    : ($('#memory_openai_model').val() || '');
                 return {
                     url: $('#memory_openai_url').val(),
                     apiKey: $('#memory_openai_api_key').val(),
-                    model: $('#memory_openai_model').val() || ''
+                    model: model
                 };
-            case 'google_openai':
+            }
+            case 'google_openai': {
+                // 优先级：勾选自定义时使用手动输入，否则使用下拉选择
+                const useCustom = $('#memory_google_custom_model_enabled').prop('checked');
+                const model = useCustom
+                    ? ($('#memory_google_custom_model').val() || '')
+                    : ($('#memory_google_openai_model').val() || '');
                 return {
                     apiKey: $('#memory_google_openai_api_key').val(),
-                    model: $('#memory_google_openai_model').val() || ''
+                    model: model
                 };
+            }
             default:
                 return {};
         }
@@ -863,11 +937,15 @@ export class MemoryUI {
             openai_compatible: {
                 url: $('#memory_openai_url').val(),
                 model: $('#memory_openai_model').val() || '',
-                apiKey: $('#memory_openai_api_key').val() || ''  // 直接保存API密钥
+                customModel: $('#memory_openai_custom_model').val() || '',
+                useCustomModel: $('#memory_openai_custom_model_enabled').prop('checked'),
+                apiKey: $('#memory_openai_api_key').val() || ''
             },
             google_openai: {
                 model: $('#memory_google_openai_model').val() || '',
-                apiKey: $('#memory_google_openai_api_key').val() || ''  // 直接保存API密钥
+                customModel: $('#memory_google_custom_model').val() || '',
+                useCustomModel: $('#memory_google_custom_model_enabled').prop('checked'),
+                apiKey: $('#memory_google_openai_api_key').val() || ''
             },
             // prompts removed - using preset format
             autoSummarize: {
@@ -939,6 +1017,14 @@ export class MemoryUI {
             $openaiSelect.append(`<option value="${savedOpenAIModel}" selected>${savedOpenAIModel}</option>`);
         }
 
+        // 恢复 OpenAI 自定义模型设置
+        const openaiUseCustom = config.openai_compatible?.useCustomModel || false;
+        $('#memory_openai_custom_model_enabled').prop('checked', openaiUseCustom);
+        $('#memory_openai_custom_model').val(config.openai_compatible?.customModel || '');
+        $('#memory_openai_custom_model').prop('disabled', !openaiUseCustom);
+        $('#memory_openai_model').prop('disabled', openaiUseCustom);
+        $('#memory_openai_refresh_models').prop('disabled', openaiUseCustom);
+
         const savedGoogleModel = config.google_openai?.model || '';
         if (savedGoogleModel) {
             const $googleSelect = $('#memory_google_openai_model');
@@ -946,7 +1032,15 @@ export class MemoryUI {
             $googleSelect.append('<option value="">-- 请选择或刷新模型列表 --</option>');
             $googleSelect.append(`<option value="${savedGoogleModel}" selected>${savedGoogleModel}</option>`);
         }
-        
+
+        // 恢复 Google 自定义模型设置
+        const googleUseCustom = config.google_openai?.useCustomModel || false;
+        $('#memory_google_custom_model_enabled').prop('checked', googleUseCustom);
+        $('#memory_google_custom_model').val(config.google_openai?.customModel || '');
+        $('#memory_google_custom_model').prop('disabled', !googleUseCustom);
+        $('#memory_google_openai_model').prop('disabled', googleUseCustom);
+        $('#memory_google_refresh_models').prop('disabled', googleUseCustom);
+
         // Auto-summarize settings
         if (config.autoSummarize) {
             $('#memory_auto_summarize_enabled').prop('checked', config.autoSummarize.enabled || false);
