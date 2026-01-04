@@ -778,4 +778,172 @@ export class MemoryService {
             throw error;
         }
     }
+
+    /**
+     * 获取OpenAI兼容API的模型列表（通过SillyTavern后端代理）
+     * @param {string} url - API端点URL
+     * @param {string} apiKey - API密钥
+     * @returns {Promise<Array>} 模型列表
+     */
+    async fetchOpenAICompatibleModels(url, apiKey) {
+        if (!url) {
+            throw new Error('请先配置API端点URL');
+        }
+
+        // 标准化API端点URL
+        let baseUrl = url.trim();
+        baseUrl = baseUrl.replace(/\/chat\/completions\/?$/, '');
+        baseUrl = baseUrl.replace(/\/v1\/?$/, '');
+        baseUrl = baseUrl.replace(/\/$/, '');
+        baseUrl = baseUrl + '/v1';
+
+        try {
+            // 获取请求头（包含CSRF token）
+            const headers = this.getRequestHeaders ? this.getRequestHeaders() : {};
+            headers['Content-Type'] = 'application/json';
+
+            // 通过酒馆后端代理获取模型列表
+            const response = await fetch('/api/backends/chat-completions/status', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    chat_completion_source: 'custom',
+                    custom_url: baseUrl,
+                    reverse_proxy: baseUrl,
+                    proxy_password: apiKey || '',
+                    custom_include_headers: ''
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                console.error('[MemoryService] 获取模型列表失败:', error);
+                throw new Error(`获取模型列表失败: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return this.parseModelsResponse(data);
+
+        } catch (error) {
+            console.error('[MemoryService] 获取模型列表错误:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取Google API的模型列表
+     * @param {string} apiKey - Google API密钥
+     * @returns {Promise<Array>} 模型列表
+     */
+    async fetchGoogleModels(apiKey) {
+        if (!apiKey) {
+            throw new Error('请先配置Google API Key');
+        }
+
+        try {
+            // Google API 直接调用（不需要代理，支持CORS）
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+                { method: 'GET' }
+            );
+
+            if (!response.ok) {
+                const error = await response.text();
+                console.error('[MemoryService] 获取Google模型列表失败:', error);
+                throw new Error(`获取模型列表失败: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return this.parseModelsResponse(data);
+
+        } catch (error) {
+            console.error('[MemoryService] 获取Google模型列表错误:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 解析模型列表响应（兼容多种API格式）
+     * 参考 SillyTavern 的容错做法
+     * @param {any} data - API返回的数据
+     * @returns {Array<{id: string, name?: string}>} 标准化的模型列表
+     */
+    parseModelsResponse(data) {
+        let rawModels = [];
+
+        try {
+            // 1) 顶层数组
+            if (Array.isArray(data)) {
+                rawModels = data;
+            }
+            // 2) 常见包装 { data: [...] }
+            else if (Array.isArray(data?.data)) {
+                rawModels = data.data;
+            }
+            // 3) { models: [...] }
+            else if (Array.isArray(data?.models)) {
+                rawModels = data.models;
+            }
+            // 4) 更深层 { data: { data: [...] } }
+            else if (Array.isArray(data?.data?.data)) {
+                rawModels = data.data.data;
+            }
+            // 5) 兜底：对象内第一个数组字段
+            else if (data && typeof data === 'object') {
+                for (const val of Object.values(data)) {
+                    if (Array.isArray(val)) {
+                        rawModels = val;
+                        break;
+                    }
+                }
+            }
+        } catch {
+            // ignore extraction errors
+        }
+
+        // Google Gemini 专用过滤：若对象包含 supportedGenerationMethods，则仅保留包含 'generateContent' 的模型
+        try {
+            rawModels = (rawModels || []).filter(m => {
+                const methods = m && typeof m === 'object' ? m.supportedGenerationMethods : undefined;
+                return Array.isArray(methods) ? methods.includes('generateContent') : true;
+            });
+        } catch {
+            // ignore filter errors
+        }
+
+        // 映射与归一化
+        let models = (rawModels || [])
+            .filter(m => m && (typeof m === 'string' || typeof m === 'object'))
+            .map(m => {
+                if (typeof m === 'string') {
+                    return { id: m, name: m };
+                }
+
+                // 兼容多字段 id
+                let id = m.id || m.name || m.model || m.slug || '';
+
+                // 去掉常见前缀，例如 Google 风格的 'models/'
+                if (typeof id === 'string' && id.startsWith('models/')) {
+                    id = id.replace(/^models\//, '');
+                }
+
+                const name = m.displayName || m.name || m.id || id || undefined;
+
+                return id ? { id, name } : null;
+            })
+            .filter(Boolean);
+
+        // 去重（按 id）
+        const seen = new Set();
+        models = models.filter(m => {
+            if (seen.has(m.id)) return false;
+            seen.add(m.id);
+            return true;
+        });
+
+        // 排序（按 id 升序）
+        models.sort((a, b) => a.id.localeCompare(b.id));
+
+        return models;
+    }
 }

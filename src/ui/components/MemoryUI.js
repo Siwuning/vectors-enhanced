@@ -223,6 +223,15 @@ export class MemoryUI {
             this.resetAutoSummarize();
         });
 
+        // 刷新模型列表按钮
+        $('#memory_openai_refresh_models').off('click').on('click', () => {
+            this.refreshOpenAIModels();
+        });
+
+        $('#memory_google_refresh_models').off('click').on('click', () => {
+            this.refreshGoogleModels();
+        });
+
         // 不在这里初始化API源显示，因为loadApiConfig已经处理了
     }
 
@@ -918,10 +927,25 @@ export class MemoryUI {
         $('#memory_max_tokens').val(config.maxTokens || defaultMemorySettings.maxTokens);
         $('#memory_auto_create_world_book').prop('checked', config.autoCreateWorldBook || false);
         $('#memory_openai_url').val(config.openai_compatible?.url || '');
-        $('#memory_openai_model').val(config.openai_compatible?.model || '');
         $('#memory_openai_api_key').val(config.openai_compatible?.apiKey || '');  // 从设置加载API密钥
-        $('#memory_google_openai_model').val(config.google_openai?.model || '');
         $('#memory_google_openai_api_key').val(config.google_openai?.apiKey || '');  // 从设置加载API密钥
+
+        // 恢复模型选择（如果有保存的值，添加到下拉列表并选中）
+        const savedOpenAIModel = config.openai_compatible?.model || '';
+        if (savedOpenAIModel) {
+            const $openaiSelect = $('#memory_openai_model');
+            $openaiSelect.empty();
+            $openaiSelect.append('<option value="">-- 请选择或刷新模型列表 --</option>');
+            $openaiSelect.append(`<option value="${savedOpenAIModel}" selected>${savedOpenAIModel}</option>`);
+        }
+
+        const savedGoogleModel = config.google_openai?.model || '';
+        if (savedGoogleModel) {
+            const $googleSelect = $('#memory_google_openai_model');
+            $googleSelect.empty();
+            $googleSelect.append('<option value="">-- 请选择或刷新模型列表 --</option>');
+            $googleSelect.append(`<option value="${savedGoogleModel}" selected>${savedGoogleModel}</option>`);
+        }
         
         // Auto-summarize settings
         if (config.autoSummarize) {
@@ -1757,6 +1781,119 @@ export class MemoryUI {
     }
 
     /**
+     * 刷新 OpenAI 兼容 API 的模型列表
+     */
+    async refreshOpenAIModels() {
+        const url = $('#memory_openai_url').val();
+        const apiKey = $('#memory_openai_api_key').val();
+        const $select = $('#memory_openai_model');
+        const $button = $('#memory_openai_refresh_models');
+        const currentValue = $select.val();
+
+        if (!url) {
+            this.toastr?.warning('请先填写 API 端点 URL');
+            return;
+        }
+
+        try {
+            // 显示加载状态
+            $button.prop('disabled', true);
+            $button.find('i').addClass('fa-spin');
+            $select.prop('disabled', true);
+
+            const models = await this.memoryService.fetchOpenAICompatibleModels(url, apiKey);
+
+            // 更新下拉列表
+            $select.empty();
+
+            if (models.length === 0) {
+                $select.append('<option value="">-- 未找到模型 --</option>');
+                this.toastr?.warning('未找到可用的模型');
+            } else {
+                $select.append('<option value="">-- 请选择模型 --</option>');
+                models.forEach(model => {
+                    const displayName = model.name && model.name !== model.id
+                        ? `${model.name} (${model.id})`
+                        : model.id;
+                    $select.append(`<option value="${model.id}">${displayName}</option>`);
+                });
+
+                // 恢复之前选择的值（如果存在）
+                if (currentValue && models.some(m => m.id === currentValue)) {
+                    $select.val(currentValue);
+                }
+
+                this.toastr?.success(`已加载 ${models.length} 个模型`);
+            }
+
+        } catch (error) {
+            console.error('[MemoryUI] 刷新模型列表失败:', error);
+            this.toastr?.error('刷新模型列表失败: ' + error.message);
+        } finally {
+            // 恢复按钮状态
+            $button.prop('disabled', false);
+            $button.find('i').removeClass('fa-spin');
+            $select.prop('disabled', false);
+        }
+    }
+
+    /**
+     * 刷新 Google API 的模型列表
+     */
+    async refreshGoogleModels() {
+        const apiKey = $('#memory_google_openai_api_key').val();
+        const $select = $('#memory_google_openai_model');
+        const $button = $('#memory_google_refresh_models');
+        const currentValue = $select.val();
+
+        if (!apiKey) {
+            this.toastr?.warning('请先填写 Google API Key');
+            return;
+        }
+
+        try {
+            // 显示加载状态
+            $button.prop('disabled', true);
+            $button.find('i').addClass('fa-spin');
+            $select.prop('disabled', true);
+
+            const models = await this.memoryService.fetchGoogleModels(apiKey);
+
+            // 更新下拉列表
+            $select.empty();
+
+            if (models.length === 0) {
+                $select.append('<option value="">-- 未找到模型 --</option>');
+                this.toastr?.warning('未找到可用的模型');
+            } else {
+                $select.append('<option value="">-- 请选择模型 --</option>');
+                models.forEach(model => {
+                    const displayName = model.name && model.name !== model.id
+                        ? `${model.name} (${model.id})`
+                        : model.id;
+                    $select.append(`<option value="${model.id}">${displayName}</option>`);
+                });
+
+                // 恢复之前选择的值（如果存在）
+                if (currentValue && models.some(m => m.id === currentValue)) {
+                    $select.val(currentValue);
+                }
+
+                this.toastr?.success(`已加载 ${models.length} 个模型`);
+            }
+
+        } catch (error) {
+            console.error('[MemoryUI] 刷新 Google 模型列表失败:', error);
+            this.toastr?.error('刷新模型列表失败: ' + error.message);
+        } finally {
+            // 恢复按钮状态
+            $button.prop('disabled', false);
+            $button.find('i').removeClass('fa-spin');
+            $select.prop('disabled', false);
+        }
+    }
+
+    /**
      * Reset summary format to default
      */
     resetSummaryFormat() {
@@ -1794,6 +1931,8 @@ export class MemoryUI {
         $('#memory_summarize_btn').off('click');
         $('#memory_api_source').off('change');
         $('#memory_vectorize_summary').off('click');
+        $('#memory_openai_refresh_models').off('click');
+        $('#memory_google_refresh_models').off('click');
         // Prompt buttons removed
         $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format, #memory_detail_level, #memory_max_tokens').off('change');
 
