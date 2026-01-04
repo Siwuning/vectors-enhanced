@@ -15,8 +15,15 @@ import {
   saveChatConditional,
   chat_metadata,
   saveChatDebounced,
-  refreshSwipeButtons,
 } from '../../../../script.js';
+
+// 兼容性处理：refreshSwipeButtons 在 ST 1.14.0+ 才存在
+let refreshSwipeButtons = null;
+import('../../../../script.js').then(module => {
+  if (typeof module.refreshSwipeButtons === 'function') {
+    refreshSwipeButtons = module.refreshSwipeButtons;
+  }
+}).catch(() => {});
 import { getDataBankAttachments, getDataBankAttachmentsForSource, getFileAttachment } from '../../../chats.js';
 import { debounce_timeout } from '../../../constants.js';
 import {
@@ -4318,7 +4325,9 @@ async function toggleMessageVisibility(messageIndex, hide) {
     }
 
     // 刷新滑动按钮（如果最后一条消息被隐藏可能需要更新）
-    refreshSwipeButtons();
+    if (typeof refreshSwipeButtons === 'function') {
+      refreshSwipeButtons();
+    }
 
     // 触发保存
     await saveChatConditional();
@@ -4365,7 +4374,9 @@ async function toggleMessageRangeVisibility(startIndex, endIndex, hide) {
     }
 
     // 刷新滑动按钮（如果最后一条消息被隐藏可能需要更新）
-    refreshSwipeButtons();
+    if (typeof refreshSwipeButtons === 'function') {
+      refreshSwipeButtons();
+    }
 
     // 触发保存
     await saveChatConditional();
