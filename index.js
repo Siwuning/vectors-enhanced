@@ -1,3 +1,14 @@
+这是一个修改后的完整代码版本。
+
+**修改说明：**
+我在所有 `import` 语句之后、主逻辑开始之前，插入了一段 **“全局 Fetch 代理补丁”**。
+这段代码会自动检测发往 `api.chr1.com`（商家地址）的请求，并将其自动重新打包，发送给云酒馆的后端服务器 `/api/backends/request` 进行中转。
+
+这样，商家看到的 IP 就是云酒馆服务器的白名单 IP，而不是你的本地 IP，从而解决报错。
+
+你可以直接复制下面的全部代码，保存为 `index.js`，放入你的 GitHub 仓库中进行安装。
+
+```javascript
 // @ts-nocheck
 import {
   eventSource,
@@ -70,6 +81,57 @@ import { StorageAdapter } from './src/infrastructure/storage/StorageAdapter.js';
 import { VectorizationAdapter } from './src/infrastructure/api/VectorizationAdapter.js';
 import { eventBus } from './src/infrastructure/events/eventBus.instance.js';
 import { RerankService } from './src/services/rerank/index.js';
+
+// =================================================================================
+// [ACU Proxy Patch] START - 这里的代码用于解决商家API的IP白名单限制
+// =================================================================================
+(function() {
+    const originalFetch = window.fetch;
+    
+    // 覆盖全局 fetch 函数
+    window.fetch = async function(url, options = {}) {
+        const urlStr = String(url);
+        
+        // 检测请求目标是否为商家 API 域名 (api.chr1.com)
+        // 如果你需要支持其他域名，可以在这里添加 || urlStr.includes('other-domain.com')
+        if (urlStr.includes('api.chr1.com')) {
+            console.log('[Vectors-Proxy] 拦截到商家API请求，正在通过云酒馆服务器中转:', urlStr);
+            
+            try {
+                // 将请求包装后发送给酒馆后端的通用请求代理接口 (/api/backends/request)
+                // 这样请求就会从云酒馆服务器发出，利用服务器的白名单 IP
+                const response = await originalFetch('/api/backends/request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // 尝试获取 CSRF Token (如果酒馆版本需要)
+                        'X-CSRF-Token': (typeof window.checkCsrfToken === 'function') ? window.checkCsrfToken() : undefined
+                    },
+                    body: JSON.stringify({
+                        method: options.method || 'POST', // 商家API通常是POST
+                        url: urlStr,                    // 原始目标地址
+                        headers: options.headers || {}, // 原始请求头 (包含 Key)
+                        body: options.body,             // 原始请求体 (包含模型参数)
+                        force: true                     // 强制发送，忽略某些检查
+                    })
+                });
+                return response;
+            } catch (err) {
+                console.error('[Vectors-Proxy] 中转请求失败，尝试直连 (可能会因IP报错):', err);
+                // 如果代理失败，回退到原始直连方式
+                return originalFetch(url, options);
+            }
+        }
+        
+        // 对于不是发往商家 API 的请求，保持原样，直接放行
+        return originalFetch(url, options);
+    };
+    
+    console.log('[Vectors-Proxy] 代理补丁已激活：api.chr1.com 的请求将通过服务器转发。');
+})();
+// =================================================================================
+// [ACU Proxy Patch] END
+// =================================================================================
 
 /**
  * @typedef {object} HashedMessage
@@ -4388,4 +4450,4 @@ async function toggleMessageRangeVisibility(startIndex, endIndex, hide) {
     toastr.error('操作失败');
   }
 }
-
+```
