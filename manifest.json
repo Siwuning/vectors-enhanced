@@ -1,5 +1,5 @@
 {
-  "display_name": "聊天记录超级管理器",
+  "display_name": "聊天记录超级管理器-改",
   "loading_order": 5000,
   "requires": [],
   "optional": ["embeddings"],
